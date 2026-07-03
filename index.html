@@ -733,7 +733,7 @@
         canvas.height = Math.round(h * scale);
         var ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg", 0.85));
+        resolve(canvas.toDataURL("image/jpeg", 0.92));
       };
       img.onerror = function () {
         URL.revokeObjectURL(url);
@@ -762,9 +762,17 @@
         document.getElementById("processing-status").textContent = cycleMsgs[cycleIdx];
       }, 4000);
 
-      resizeImageForUpload(file, 1568).then(function (imageDataUrl) {
+      resizeImageForUpload(file, 2200).then(function (imageDataUrl) {
         callClaudeVision(imageDataUrl, apiKey).then(function (items) {
           clearInterval(cycleTimer);
+          if (items.length === 0) {
+            var emptyMsg = "The AI could not find any rows on that photo. Try retaking it closer, flatter, and with less glare, then scan again.";
+            announce(emptyMsg);
+            showView("home");
+            renderHome();
+            showScanError(emptyMsg);
+            return;
+          }
           pendingItems = items;
           pendingRawText = items.map(function (it) {
             var lines = [it.name];
