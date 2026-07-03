@@ -720,7 +720,18 @@
     throw new Error("the response looks cut off");
   }
 
-  function resizeImageForUpload(file, maxEdge) {
+  var ANTHROPIC_MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+  function readFileAsDataUrl(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(reader.result); };
+      reader.onerror = function () { reject(new Error("could not read the photo file")); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function resizeImageForUpload(file, maxEdge, quality) {
     return new Promise(function (resolve, reject) {
       var img = new Image();
       var url = URL.createObjectURL(file);
@@ -733,7 +744,7 @@
         canvas.height = Math.round(h * scale);
         var ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg", 0.92));
+        resolve(canvas.toDataURL("image/jpeg", quality));
       };
       img.onerror = function () {
         URL.revokeObjectURL(url);
@@ -741,6 +752,17 @@
       };
       img.src = url;
     });
+  }
+
+  // Anthropic's API accepts images up to 5MB and handles its own server-side
+  // optimization; only recompress client-side when a photo genuinely exceeds
+  // that limit, and even then favor fidelity (fine print, small text) over
+  // aggressive shrinking.
+  function prepareImageForUpload(file) {
+    if (file.size <= ANTHROPIC_MAX_IMAGE_BYTES) {
+      return readFileAsDataUrl(file);
+    }
+    return resizeImageForUpload(file, 2600, 0.9);
   }
 
   function handleNewPhoto(file) {
@@ -762,7 +784,7 @@
         document.getElementById("processing-status").textContent = cycleMsgs[cycleIdx];
       }, 4000);
 
-      resizeImageForUpload(file, 2200).then(function (imageDataUrl) {
+      prepareImageForUpload(file).then(function (imageDataUrl) {
         callClaudeVision(imageDataUrl, apiKey).then(function (items) {
           clearInterval(cycleTimer);
           if (items.length === 0) {
