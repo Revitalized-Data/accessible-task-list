@@ -720,6 +720,29 @@
     throw new Error("the response looks cut off");
   }
 
+  function resizeImageForUpload(file, maxEdge) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      var url = URL.createObjectURL(file);
+      img.onload = function () {
+        URL.revokeObjectURL(url);
+        var w = img.naturalWidth, h = img.naturalHeight;
+        var scale = Math.min(1, maxEdge / Math.max(w, h));
+        var canvas = document.createElement("canvas");
+        canvas.width = Math.round(w * scale);
+        canvas.height = Math.round(h * scale);
+        var ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.85));
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        reject(new Error("could not load the photo for resizing"));
+      };
+      img.src = url;
+    });
+  }
+
   function handleNewPhoto(file) {
     showScanError(null);
     getMeta("anthropicApiKey").then(function (apiKey) {
@@ -731,7 +754,7 @@
         return;
       }
       showView("processing");
-      var cycleMsgs = ["Uploading photo…", "Reading the list with AI…", "Still working, this can take up to 30 seconds…"];
+      var cycleMsgs = ["Preparing photo…", "Uploading photo…", "Reading the list with AI…", "Still working, this can take up to 30 seconds…"];
       var cycleIdx = 0;
       document.getElementById("processing-status").textContent = cycleMsgs[0];
       var cycleTimer = setInterval(function () {
@@ -739,9 +762,7 @@
         document.getElementById("processing-status").textContent = cycleMsgs[cycleIdx];
       }, 4000);
 
-      var reader = new FileReader();
-      reader.onload = function () {
-        var imageDataUrl = reader.result;
+      resizeImageForUpload(file, 1568).then(function (imageDataUrl) {
         callClaudeVision(imageDataUrl, apiKey).then(function (items) {
           clearInterval(cycleTimer);
           pendingItems = items;
@@ -761,8 +782,14 @@
           renderHome();
           showScanError(msg);
         });
-      };
-      reader.readAsDataURL(file);
+      }).catch(function (err) {
+        clearInterval(cycleTimer);
+        var msg = "Could not prepare the photo: " + err.message + ". Please try again.";
+        announce(msg);
+        showView("home");
+        renderHome();
+        showScanError(msg);
+      });
     });
   }
 
