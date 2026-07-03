@@ -269,6 +269,9 @@
   <!-- HOME -->
   <section id="view-home">
     <div id="home-summary"></div>
+    <div class="card" id="scan-error-card" hidden style="border-color: var(--danger); background: var(--danger-bg);">
+      <strong id="scan-error-text"></strong>
+    </div>
     <div class="card">
       <h2>Scan a New List</h2>
       <p class="muted">Take a photo, or choose one from Photos or Files. You can scan more than once a day &mdash; for example, if there's a second page.</p>
@@ -687,7 +690,15 @@
     });
   });
 
+  function showScanError(msg) {
+    var card = document.getElementById("scan-error-card");
+    if (!msg) { card.hidden = true; return; }
+    document.getElementById("scan-error-text").textContent = msg;
+    card.hidden = false;
+  }
+
   function handleNewPhoto(file) {
+    showScanError(null);
     getMeta("anthropicApiKey").then(function (apiKey) {
       if (!apiKey) {
         announce("Please add your AI reading key in Settings before scanning a photo.");
@@ -721,9 +732,11 @@
           openReview();
         }).catch(function (err) {
           clearInterval(cycleTimer);
-          announce("Could not read the photo: " + err.message + ". Please try again.");
+          var msg = "Could not read the photo: " + err.message + ". Please try again.";
+          announce(msg);
           showView("home");
           renderHome();
+          showScanError(msg);
         });
       };
       reader.readAsDataURL(file);
