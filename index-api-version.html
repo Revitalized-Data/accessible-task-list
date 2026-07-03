@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5">
+<meta name="theme-color" content="#0b3d91">
+<title>Daily Task List (API key version)</title>
+<link rel="manifest" href="manifest.json">
+<style>
+  :root {
+    --bg: #ffffff;
+    --text: #0d0d0d;
+    --panel: #f4f6fb;
+    --border: #b9c2d0;
+    --accent: #0b3d91;
+    --accent-text: #ffffff;
+    --done-bg: #1e6b34;
+    --done-text: #ffffff;
+    --danger: #8c1616;
+    --danger-bg: #fdecec;
+    --focus: #ff9800;
+    --tag-bg: #7a1010;
+    --tag-text: #ffffff;
+    --font-base: 20px;
+  }
+  * { box-sizing: border-box; }
+  html { font-size: var(--font-base); }
+  html.large-text { --font-base: 24px; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.4;
+    padding-bottom: 3rem;
+  }
+  .skip-link {
+    position: absolute;
+    left: -999px;
+    top: 0;
+    background: var(--accent);
+    color: var(--accent-text);
+    padding: 0.75rem 1rem;
+    z-index: 100;
+  }
+  .skip-link:focus { left: 0.5rem; top: 0.5rem; }
+
+  header.app-header {
+    background: var(--accent);
+    color: var(--accent-text);
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  header.app-header h1 { font-size: 1.3rem; margin: 0; }
+  header.app-header nav { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+  button, .btn {
+    font-size: 1rem;
+    min-height: 3.25rem;
+    min-width: 3.25rem;
+    border-radius: 0.6rem;
+    border: 2px solid transparent;
+    padding: 0.6rem 1rem;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible {
+    outline: 4px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .btn-primary { background: var(--accent); color: var(--accent-text); }
+  .btn-secondary { background: var(--panel); color: var(--text); border-color: var(--border); }
+  .btn-danger { background: var(--danger-bg); color: var(--danger); border-color: var(--danger); }
+  .btn-header { background: rgba(255,255,255,0.15); color: #fff; border-color: rgba(255,255,255,0.6); min-height: 2.75rem; }
+  .btn-block { display: block; width: 100%; text-align: left; }
+  .btn-big { min-height: 5rem; font-size: 1.15rem; }
+
+  main { max-width: 40rem; margin: 0 auto; padding: 1rem; }
+
+  .status-live {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .import-choices { display: grid; gap: 0.75rem; }
+  .import-choices button { display: flex; align-items: center; gap: 0.75rem; }
+  .import-choices .icon { font-size: 1.6rem; }
+
+  .progress-banner {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+  }
+
+  ul.item-list { list-style: none; margin: 0; padding: 0; }
+  li.item-row {
+    border: 2px solid var(--border);
+    border-radius: 0.75rem;
+    margin-bottom: 0.75rem;
+    background: #fff;
+    overflow: hidden;
+  }
+  li.item-row.done { border-color: var(--done-bg); background: #f1fbf3; }
+
+  .item-row-top {
+    display: flex;
+    align-items: stretch;
+  }
+  .speaker-btn {
+    flex: 0 0 4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff3cd;
+    border: none;
+    border-right: 2px solid var(--border);
+    font-size: 1.5rem;
+    border-radius: 0;
+  }
+  .speaker-btn[aria-pressed="true"] { background: #ffd966; }
+  .speaker-btn:focus-visible { outline: 4px solid var(--focus); outline-offset: -4px; }
+
+  .check-btn {
+    flex: 0 0 4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    border: none;
+    border-right: 2px solid var(--border);
+    border-radius: 0;
+    padding: 0;
+  }
+  .check-btn:focus-visible { outline: 4px solid var(--focus); outline-offset: -4px; }
+  .check-btn:disabled { opacity: 1; cursor: default; }
+  .item-main-btn {
+    flex: 1;
+    background: transparent;
+    border: none;
+    text-align: left;
+    padding: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 4.5rem;
+  }
+  .check-circle {
+    flex: 0 0 2rem;
+    height: 2rem;
+    width: 2rem;
+    border-radius: 50%;
+    border: 3px solid var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+  }
+  li.item-row.done .check-circle { background: var(--done-bg); border-color: var(--done-bg); color: #fff; }
+  .item-name { font-size: 1.15rem; font-weight: 700; }
+  li.item-row.done .item-name { text-decoration: line-through; color: var(--done-bg); }
+
+  .tag-chip {
+    display: inline-block;
+    background: var(--tag-bg);
+    color: var(--tag-text);
+    border-radius: 999px;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    margin: 0.15rem 0.3rem 0 0;
+  }
+
+  .item-details {
+    padding: 0 1rem 1rem 1rem;
+    border-top: 1px dashed var(--border);
+    font-size: 1rem;
+  }
+  .item-details dt { font-weight: 700; margin-top: 0.5rem; }
+  .item-details dd { margin: 0; }
+
+  .field { margin-bottom: 1rem; }
+  .field label { display: block; font-weight: 700; margin-bottom: 0.3rem; }
+  .field input[type="text"], .field textarea {
+    width: 100%;
+    font-size: 1rem;
+    padding: 0.6rem;
+    border: 2px solid var(--border);
+    border-radius: 0.5rem;
+    font-family: inherit;
+  }
+  .field textarea { min-height: 5rem; }
+
+  .review-item {
+    border: 2px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 0.9rem;
+    margin-bottom: 0.9rem;
+    background: #fff;
+  }
+
+  section[hidden] { display: none !important; }
+
+  .history-entry, .settings-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.9rem;
+    border: 2px solid var(--border);
+    border-radius: 0.75rem;
+    margin-bottom: 0.75rem;
+    background: #fff;
+  }
+
+  .muted { color: #444; font-size: 0.95rem; }
+  .row-gap { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+  .center { text-align: center; }
+  .spinner {
+    border: 6px solid var(--panel);
+    border-top: 6px solid var(--accent);
+    border-radius: 50%;
+    width: 3rem;
+    height: 3rem;
+    animation: spin 1s linear infinite;
+    margin: 1.5rem auto;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  footer.save-error {
+    background: var(--danger-bg);
+    color: var(--danger);
+    border: 2px solid var(--danger);
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    margin: 1rem;
+    font-weight: 700;
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+
+<header class="app-header">
+  <h1>Daily Task List</h1>
+  <nav aria-label="Main navigation">
+    <button type="button" class="btn-header" id="nav-home">Home</button>
+    <button type="button" class="btn-header" id="nav-history">History</button>
+    <button type="button" class="btn-header" id="nav-settings">Settings</button>
+  </nav>
+</header>
+
+<main id="main-content">
+  <div id="status-live" class="status-live" role="status" aria-live="polite"></div>
+
+  <!-- HOME -->
+  <section id="view-home">
+    <div id="home-summary"></div>
+    <div class="card">
+      <h2>Scan a New List</h2>
+      <p class="muted">Take a photo, or choose one from Photos or Files. You can scan more than once a day &mdash; for example, if there's a second page.</p>
+      <div class="import-choices">
+        <button type="button" class="btn-primary btn-block btn-big" id="btn-camera">
+          <span class="icon" aria-hidden="true">📷</span> Take Photo
+        </button>
+        <button type="button" class="btn-secondary btn-block btn-big" id="btn-photos">
+          <span class="icon" aria-hidden="true">🖼️</span> Choose From Photos
+        </button>
+        <button type="button" class="btn-secondary btn-block btn-big" id="btn-files">
+          <span class="icon" aria-hidden="true">📁</span> Choose From Files
+        </button>
+      </div>
+      <input type="file" id="file-camera" accept="image/*" capture="environment" class="status-live">
+      <input type="file" id="file-photos" accept="image/*" class="status-live">
+      <input type="file" id="file-files" accept="image/*" class="status-live">
+    </div>
+    <div class="card" id="home-checklist-wrap" hidden>
+      <div class="row-gap" style="justify-content:space-between; align-items:center;">
+        <h2 style="margin:0;">Today's Checklist</h2>
+        <button type="button" class="btn-secondary" id="btn-view-raw">View Imported Text</button>
+      </div>
+      <p class="progress-banner" id="home-progress"></p>
+      <ul class="item-list" id="home-item-list"></ul>
+    </div>
+  </section>
+
+  <!-- OCR PROCESSING -->
+  <section id="view-processing" hidden>
+    <div class="card center">
+      <h2>Reading your photo&hellip;</h2>
+      <div class="spinner" aria-hidden="true"></div>
+      <p id="processing-status">Starting&hellip;</p>
+    </div>
+  </section>
+
+  <!-- REVIEW / EDIT EXTRACTED ITEMS -->
+  <section id="view-review" hidden>
+    <div class="card">
+      <h2>Review What Was Found</h2>
+      <p class="muted">Check each item below. Fix any mistakes, then save. Use the microphone key on your keyboard to dictate text if that's easier.</p>
+      <div class="field">
+        <label for="review-raw-text">Raw scanned text (for reference)</label>
+        <textarea id="review-raw-text" readonly></textarea>
+      </div>
+      <button type="button" class="btn-secondary" id="btn-add-item">+ Add Item</button>
+      <div id="review-items"></div>
+      <div class="row-gap">
+        <button type="button" class="btn-primary btn-big" id="btn-save-import">Save This List</button>
+        <button type="button" class="btn-secondary" id="btn-cancel-import">Cancel</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- VIEW RAW IMPORT -->
+  <section id="view-raw" hidden>
+    <div class="card">
+      <h2>Imported Text</h2>
+      <div id="raw-import-list"></div>
+      <button type="button" class="btn-secondary" id="btn-raw-back">Back to Checklist</button>
+    </div>
+  </section>
+
+  <!-- HISTORY -->
+  <section id="view-history" hidden>
+    <div class="card">
+      <h2>Past Lists</h2>
+      <div id="history-list"></div>
+    </div>
+  </section>
+
+  <section id="view-history-day" hidden>
+    <div class="card">
+      <div class="row-gap" style="justify-content:space-between;">
+        <h2 id="history-day-title" style="margin:0;"></h2>
+        <button type="button" class="btn-secondary" id="btn-history-back">Back to History</button>
+      </div>
+      <p class="muted">This is a past list. It is view-only and cannot be checked off.</p>
+      <p class="progress-banner" id="history-day-progress"></p>
+      <ul class="item-list" id="history-day-list"></ul>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="view-settings" hidden>
+    <div class="card">
+      <h2>Settings</h2>
+      <div class="settings-row">
+        <span>Large Text</span>
+        <button type="button" class="btn-secondary" id="btn-toggle-large-text" aria-pressed="false">Off</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>AI Reading Key</h2>
+      <p class="muted">Scanning a photo uses Claude's AI to read the list. This requires a personal Anthropic API key, entered once here. It's stored only on this phone and is never shared. There is a small cost per scan (typically a few cents).</p>
+      <div class="field">
+        <label for="api-key-input">Anthropic API Key</label>
+        <input type="password" id="api-key-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="sk-ant-...">
+      </div>
+      <div class="row-gap">
+        <button type="button" class="btn-primary" id="btn-save-key">Save Key</button>
+        <button type="button" class="btn-secondary" id="btn-show-key" aria-pressed="false">Show Key</button>
+      </div>
+      <p class="muted" id="api-key-status"></p>
+    </div>
+    <div class="card">
+      <h2>Backup Your Data</h2>
+      <p class="muted">Save a copy of everything to the Files app. This file is fully yours &mdash; it stays saved even if this app's data is ever lost.</p>
+      <button type="button" class="btn-primary btn-big btn-block" id="btn-backup">Backup to Files</button>
+      <p class="muted" id="last-backup-note"></p>
+    </div>
+    <div class="card">
+      <h2>Restore From Backup</h2>
+      <p class="muted">Load a previously saved backup file. By default this adds to what's already saved without deleting anything.</p>
+      <button type="button" class="btn-secondary btn-big btn-block" id="btn-restore">Choose Backup File</button>
+      <input type="file" id="file-restore" accept=".csv,text/csv" class="status-live">
+      <div class="field" style="margin-top:1rem;">
+        <label for="restore-mode">If a day already has data</label>
+        <select id="restore-mode" style="font-size:1rem; padding:0.5rem; min-height:3rem; width:100%;">
+          <option value="merge" selected>Keep both (merge)</option>
+          <option value="replace">Replace with backup</option>
+        </select>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="save-error" id="save-error" hidden></footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- Utilities ---------- */
+  function todayKey() {
+    var d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function dateKeyLabel(key) {
+    var parts = key.split("-").map(Number);
+    var d = new Date(parts[0], parts[1] - 1, parts[2]);
+    return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  }
+  function timeLabel(iso) {
+    return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+  function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+  function announce(msg) {
+    var el = document.getElementById("status-live");
+    el.textContent = "";
+    setTimeout(function () { el.textContent = msg; }, 30);
+  }
+  function showSaveError(msg) {
+    var el = document.getElementById("save-error");
+    if (!msg) { el.hidden = true; el.textContent = ""; return; }
+    el.hidden = false;
+    el.textContent = msg;
+  }
+  function escapeHtml(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  /* ---------- Storage (IndexedDB) ---------- */
+  var DB_NAME = "accessibleTaskListDB";
+  var DB_VERSION = 1;
+  var dbPromise = new Promise(function (resolve, reject) {
+    var req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = function (e) {
+      var db = e.target.result;
+      if (!db.objectStoreNames.contains("imports")) {
+        var store = db.createObjectStore("imports", { keyPath: "id" });
+        store.createIndex("dateKey", "dateKey", { unique: false });
+      }
+      if (!db.objectStoreNames.contains("meta")) {
+        db.createObjectStore("meta", { keyPath: "key" });
+      }
+    };
+    req.onsuccess = function (e) { resolve(e.target.result); };
+    req.onerror = function (e) { reject(e.target.error); };
+  });
+
+  function withStore(storeName, mode, fn) {
+    return dbPromise.then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(storeName, mode);
+        var store = tx.objectStore(storeName);
+        var result = fn(store);
+        tx.oncomplete = function () { resolve(result); };
+        tx.onerror = function (e) { reject(e.target.error); };
+      });
+    });
+  }
+
+  function saveImport(importRecord) {
+    return withStore("imports", "readwrite", function (store) {
+      store.put(importRecord);
+    }).catch(function (err) {
+      showSaveError("Could not save your list. Please try again, or back up using Settings if this keeps happening.");
+      throw err;
+    });
+  }
+  function deleteImportRecord(id) {
+    return withStore("imports", "readwrite", function (store) { store.delete(id); });
+  }
+  function getAllImports() {
+    return withStore("imports", "readonly", function (store) {
+      return store.getAll();
+    }).then(function () {
+      return dbPromise.then(function (db) {
+        return new Promise(function (resolve, reject) {
+          var tx = db.transaction("imports", "readonly");
+          var req = tx.objectStore("imports").getAll();
+          req.onsuccess = function () { resolve(req.result || []); };
+          req.onerror = function (e) { reject(e.target.error); };
+        });
+      });
+    });
+  }
+  function setMeta(key, value) {
+    return withStore("meta", "readwrite", function (store) { store.put({ key: key, value: value }); });
+  }
+  function getMeta(key) {
+    return dbPromise.then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction("meta", "readonly");
+        var req = tx.objectStore("meta").get(key);
+        req.onsuccess = function () { resolve(req.result ? req.result.value : null); };
+        req.onerror = function (e) { reject(e.target.error); };
+      });
+    });
+  }
+
+  /* ---------- Text to Speech ---------- */
+  var currentUtterance = null;
+  var currentSpeakerBtn = null;
+  function speak(text, btn) {
+    if (!("speechSynthesis" in window)) {
+      announce("Speech is not available on this device.");
+      return;
+    }
+    if (currentUtterance) {
+      window.speechSynthesis.cancel();
+      var prevBtn = currentSpeakerBtn;
+      currentUtterance = null;
+      currentSpeakerBtn = null;
+      if (prevBtn === btn) { return; }
+    }
+    var utt = new SpeechSynthesisUtterance(text);
+    utt.rate = 0.95;
+    currentUtterance = utt;
+    currentSpeakerBtn = btn;
+    btn.setAttribute("aria-pressed", "true");
+    btn.setAttribute("aria-label", "Stop reading");
+    btn.textContent = "⏹️";
+    utt.onend = function () { resetSpeaker(btn); };
+    utt.onerror = function () { resetSpeaker(btn); };
+    window.speechSynthesis.speak(utt);
+  }
+  function resetSpeaker(btn) {
+    btn.setAttribute("aria-pressed", "false");
+    btn.setAttribute("aria-label", "Read aloud");
+    btn.textContent = "🔊";
+    if (currentSpeakerBtn === btn) { currentUtterance = null; currentSpeakerBtn = null; }
+  }
+  function speakerButtonHtml(idAttr) {
+    return '<button type="button" class="speaker-btn" data-speak="' + idAttr + '" aria-pressed="false" aria-label="Read aloud">🔊</button>';
+  }
+
+  /* ---------- View management ---------- */
+  var views = ["home", "processing", "review", "raw", "history", "history-day", "settings"];
+  function showView(name) {
+    views.forEach(function (v) {
+      document.getElementById("view-" + v).hidden = (v !== name);
+    });
+    if (currentUtterance) { window.speechSynthesis.cancel(); }
+    document.getElementById("main-content").focus && document.getElementById("main-content").scrollIntoView({ block: "start" });
+  }
+
+  /* ---------- State ---------- */
+  var pendingItems = [];
+  var pendingRawText = "";
+  var pendingDateKey = todayKey();
+
+  /* ---------- Home rendering ---------- */
+  function renderHome() {
+    return getAllImports().then(function (all) {
+      var todays = all.filter(function (i) { return i.dateKey === todayKey(); });
+      var wrap = document.getElementById("home-checklist-wrap");
+      var summary = document.getElementById("home-summary");
+      if (todays.length === 0) {
+        wrap.hidden = true;
+        summary.innerHTML = "";
+        return;
+      }
+      wrap.hidden = false;
+      todays.sort(function (a, b) { return a.timestamp.localeCompare(b.timestamp); });
+      var items = [];
+      todays.forEach(function (imp) {
+        imp.items.forEach(function (it) { items.push(Object.assign({}, it, { importId: imp.id })); });
+      });
+      var doneCount = items.filter(function (i) { return i.done; }).length;
+      document.getElementById("home-progress").textContent = doneCount + " of " + items.length + " complete";
+      var list = document.getElementById("home-item-list");
+      list.innerHTML = items.map(function (it) { return itemRowHtml(it, { readonly: false }); }).join("");
+      attachItemRowHandlers(list, todays, refreshAfterToggle);
+    });
+  }
+
+  function refreshAfterToggle() { renderHome(); }
+
+  function itemRowHtml(it, opts) {
+    var readonly = !!(opts && opts.readonly);
+    var tagsHtml = (it.tags || []).map(function (t) { return '<span class="tag-chip">' + escapeHtml(t) + "</span>"; }).join("");
+    var statusPhrase = it.done ? "Done. " : "Not done. ";
+    var checkBtnHtml;
+    if (readonly) {
+      checkBtnHtml =
+        '<span class="check-btn" role="img" aria-label="' + (it.done ? "Done" : "Not done") + '">' +
+        '<span class="check-circle" aria-hidden="true">' + (it.done ? "✓" : "") + "</span>" +
+        "</span>";
+    } else {
+      var checkLabel = it.done ? ("Mark " + escapeHtml(it.name) + " not done. Currently done.") : ("Mark " + escapeHtml(it.name) + " done.");
+      checkBtnHtml =
+        '<button type="button" class="check-btn" data-done-toggle="' + it.id + '" aria-pressed="' + (it.done ? "true" : "false") + '" aria-label="' + checkLabel + '">' +
+        '<span class="check-circle" aria-hidden="true">' + (it.done ? "✓" : "") + "</span>" +
+        "</button>";
+    }
+    var expandLabel = (readonly ? statusPhrase : "") + escapeHtml(it.name) + (it.tags && it.tags.length ? ". Tags: " + it.tags.map(escapeHtml).join(", ") + "." : "") + " Show details.";
+    return (
+      '<li class="item-row' + (it.done ? " done" : "") + '" data-item-id="' + it.id + '" data-import-id="' + it.importId + '">' +
+      '<div class="item-row-top">' +
+      speakerButtonHtml(it.id) +
+      checkBtnHtml +
+      '<button type="button" class="item-main-btn" data-toggle="' + it.id + '" aria-expanded="false" aria-label="' + expandLabel + '">' +
+      '<span><span class="item-name">' + escapeHtml(it.name) + "</span><br>" + tagsHtml + "</span>" +
+      "</button>" +
+      "</div>" +
+      '<div class="item-details" hidden data-details-for="' + it.id + '">' +
+      "<dl>" +
+      (it.details || []).map(function (d) { return "<dt>" + escapeHtml(d.label) + "</dt><dd>" + escapeHtml(d.value) + "</dd>"; }).join("") +
+      "</dl>" +
+      "</div>" +
+      "</li>"
+    );
+  }
+
+  function speakTextForItem(it) {
+    var parts = [it.name];
+    (it.tags || []).forEach(function (t) { parts.push(t); });
+    (it.details || []).forEach(function (d) { parts.push(d.label + ": " + d.value); });
+    return parts.join(". ");
+  }
+
+  function attachItemRowHandlers(listEl, importsForLookup, onToggle) {
+    function findItem(itemId) {
+      for (var i = 0; i < importsForLookup.length; i++) {
+        var imp = importsForLookup[i];
+        for (var j = 0; j < imp.items.length; j++) {
+          if (imp.items[j].id === itemId) return { imp: imp, item: imp.items[j] };
+        }
+      }
+      return null;
+    }
+    listEl.querySelectorAll("[data-speak]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var found = findItem(btn.getAttribute("data-speak"));
+        if (found) speak(speakTextForItem(found.item), btn);
+      });
+    });
+    listEl.querySelectorAll("[data-toggle]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = btn.getAttribute("data-toggle");
+        var details = listEl.querySelector('[data-details-for="' + id + '"]');
+        var expanded = btn.getAttribute("aria-expanded") === "true";
+        btn.setAttribute("aria-expanded", String(!expanded));
+        details.hidden = expanded;
+      });
+    });
+    listEl.querySelectorAll("[data-done-toggle]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var li = btn.closest("li.item-row");
+        toggleDone(li.getAttribute("data-item-id"), li.getAttribute("data-import-id"), findItem, onToggle);
+      });
+    });
+  }
+
+  function toggleDone(itemId, importId, findItem, onToggle) {
+    getAllImports().then(function (all) {
+      var imp = all.find(function (i) { return i.id === importId; });
+      if (!imp) return;
+      var item = imp.items.find(function (i) { return i.id === itemId; });
+      if (!item) return;
+      item.done = !item.done;
+      saveImport(imp).then(function () {
+        showSaveError(null);
+        announce(item.name + (item.done ? " marked done" : " marked not done"));
+        onToggle();
+      });
+    });
+  }
+
+  /* ---------- Import: capture ---------- */
+  document.getElementById("btn-camera").addEventListener("click", function () { document.getElementById("file-camera").click(); });
+  document.getElementById("btn-photos").addEventListener("click", function () { document.getElementById("file-photos").click(); });
+  document.getElementById("btn-files").addEventListener("click", function () { document.getElementById("file-files").click(); });
+  ["file-camera", "file-photos", "file-files"].forEach(function (id) {
+    document.getElementById(id).addEventListener("change", function (e) {
+      var file = e.target.files[0];
+      e.target.value = "";
+      if (file) handleNewPhoto(file);
+    });
+  });
+
+  function handleNewPhoto(file) {
+    getMeta("anthropicApiKey").then(function (apiKey) {
+      if (!apiKey) {
+        announce("Please add your AI reading key in Settings before scanning a photo.");
+        showView("settings");
+        refreshBackupNote();
+        document.getElementById("api-key-input").focus();
+        return;
+      }
+      showView("processing");
+      var cycleMsgs = ["Uploading photo…", "Reading the list with AI…", "Still working, this can take up to 30 seconds…"];
+      var cycleIdx = 0;
+      document.getElementById("processing-status").textContent = cycleMsgs[0];
+      var cycleTimer = setInterval(function () {
+        cycleIdx = Math.min(cycleIdx + 1, cycleMsgs.length - 1);
+        document.getElementById("processing-status").textContent = cycleMsgs[cycleIdx];
+      }, 4000);
+
+      var reader = new FileReader();
+      reader.onload = function () {
+        var imageDataUrl = reader.result;
+        callClaudeVision(imageDataUrl, apiKey).then(function (items) {
+          clearInterval(cycleTimer);
+          pendingItems = items;
+          pendingRawText = items.map(function (it) {
+            var lines = [it.name];
+            (it.tags || []).forEach(function (t) { lines.push("  Tag: " + t); });
+            (it.details || []).forEach(function (d) { lines.push("  " + d.label + ": " + d.value); });
+            return lines.join("\n");
+          }).join("\n\n");
+          pendingDateKey = todayKey();
+          openReview();
+        }).catch(function (err) {
+          clearInterval(cycleTimer);
+          announce("Could not read the photo: " + err.message + ". Please try again.");
+          showView("home");
+          renderHome();
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function callClaudeVision(imageDataUrl, apiKey) {
+    var match = imageDataUrl.match(/^data:(.*?);base64,(.*)$/);
+    if (!match) return Promise.reject(new Error("Could not read image data"));
+    var mediaType = match[1];
+    var base64 = match[2];
+    var systemPrompt =
+      "You extract structured task data from a photo of a printed daily list for a blind employee who will hear it read aloud. " +
+      "The photo may be a table with columns such as a name, tags/notes, owner/contact, location, and a time. " +
+      "Return ONLY a JSON array, no prose, no markdown code fences. " +
+      "Each array element must be an object: " +
+      '{"name": string, "tags": [string], "details": [{"label": string, "value": string}]}. ' +
+      '"name" is the primary identifier for that row (e.g. a pet or person\'s name). ' +
+      '"tags" should contain only short safety-relevant or attention-relevant flags (e.g. "Dog Aggressive", "Special Needs"), not every note. ' +
+      '"details" should contain every other piece of information in that row as separate label/value pairs (e.g. breed/age, owner and phone, space or location, departing date/time, section/package name this row belongs to). ' +
+      "Include every row from every section/table on the page. If the image is unclear or empty, return an empty JSON array.";
+    return fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-5",
+        max_tokens: 8000,
+        system: systemPrompt,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
+              { type: "text", text: "Extract every row from this list as JSON, following the schema exactly." },
+            ],
+          },
+        ],
+      }),
+    }).then(function (resp) {
+      if (!resp.ok) {
+        return resp.json().catch(function () { return null; }).then(function (errBody) {
+          var msg = errBody && errBody.error && errBody.error.message ? errBody.error.message : ("HTTP " + resp.status);
+          throw new Error(msg);
+        });
+      }
+      return resp.json();
+    }).then(function (data) {
+      var text = (data.content && data.content[0] && data.content[0].text) || "[]";
+      text = text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/, "").replace(/```\s*$/, "");
+      var parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch (e) {
+        throw new Error("The AI response could not be understood. Please try again.");
+      }
+      if (!Array.isArray(parsed)) throw new Error("Unexpected response format.");
+      return parsed.map(function (it) {
+        return {
+          id: uid(),
+          name: (it.name || "Unnamed").toString(),
+          tags: Array.isArray(it.tags) ? it.tags.map(String) : [],
+          details: Array.isArray(it.details) ? it.details.map(function (d) { return { label: String(d.label || ""), value: String(d.value || "") }; }) : [],
+          done: false,
+        };
+      });
+    });
+  }
+
+  /* ---------- Review / Edit ---------- */
+  function openReview() {
+    document.getElementById("review-raw-text").value = pendingRawText;
+    renderReviewItems();
+    showView("review");
+    announce(pendingItems.length + " lines found. Review and edit before saving.");
+  }
+
+  function renderReviewItems() {
+    var container = document.getElementById("review-items");
+    container.innerHTML = pendingItems.map(function (it, idx) {
+      return (
+        '<div class="review-item" data-idx="' + idx + '">' +
+        '<div class="field"><label for="ri-name-' + idx + '">Item ' + (idx + 1) + " name</label>" +
+        '<input type="text" id="ri-name-' + idx + '" value="' + escapeHtml(it.name) + '" data-field="name" data-idx="' + idx + '"></div>' +
+        '<div class="field"><label for="ri-tags-' + idx + '">Tags (comma separated, e.g. Dog Aggressive)</label>' +
+        '<input type="text" id="ri-tags-' + idx + '" value="' + escapeHtml((it.tags || []).join(", ")) + '" data-field="tags" data-idx="' + idx + '"></div>' +
+        '<div class="field"><label for="ri-details-' + idx + '">Details (one per line, e.g. Owner: Jane Doe)</label>' +
+        '<textarea id="ri-details-' + idx + '" data-field="details" data-idx="' + idx + '">' +
+        escapeHtml((it.details || []).map(function (d) { return d.label + ": " + d.value; }).join("\n")) +
+        "</textarea></div>" +
+        '<button type="button" class="btn-danger" data-remove="' + idx + '">Remove This Item</button>' +
+        "</div>"
+      );
+    }).join("");
+    container.querySelectorAll("[data-field]").forEach(function (el) {
+      el.addEventListener("input", function () {
+        var idx = Number(el.getAttribute("data-idx"));
+        var field = el.getAttribute("data-field");
+        if (field === "name") pendingItems[idx].name = el.value;
+        if (field === "tags") pendingItems[idx].tags = el.value.split(",").map(function (t) { return t.trim(); }).filter(Boolean);
+        if (field === "details") {
+          pendingItems[idx].details = el.value.split("\n").filter(Boolean).map(function (line) {
+            var m = line.match(/^([^:]+):\s*(.*)$/);
+            return m ? { label: m[1].trim(), value: m[2].trim() } : { label: "Note", value: line.trim() };
+          });
+        }
+      });
+    });
+    container.querySelectorAll("[data-remove]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var idx = Number(btn.getAttribute("data-remove"));
+        var removedName = pendingItems[idx].name || "Item";
+        pendingItems.splice(idx, 1);
+        renderReviewItems();
+        announce(removedName + " removed.");
+      });
+    });
+  }
+
+  document.getElementById("btn-add-item").addEventListener("click", function () {
+    pendingItems.push({ id: uid(), name: "", tags: [], details: [], done: false });
+    renderReviewItems();
+    var idx = pendingItems.length - 1;
+    document.getElementById("ri-name-" + idx).focus();
+    announce("New blank item added.");
+  });
+
+  document.getElementById("btn-cancel-import").addEventListener("click", function () {
+    pendingItems = [];
+    pendingRawText = "";
+    showView("home");
+    renderHome();
+  });
+
+  document.getElementById("btn-save-import").addEventListener("click", function () {
+    var cleanItems = pendingItems.filter(function (it) { return it.name && it.name.trim().length > 0; });
+    if (cleanItems.length === 0) {
+      announce("No items to save. Add at least one item, or cancel.");
+      return;
+    }
+    getAllImports().then(function (all) {
+      var todaysCount = all.filter(function (i) { return i.dateKey === pendingDateKey; }).length;
+      var record = {
+        id: uid(),
+        dateKey: pendingDateKey,
+        timestamp: new Date().toISOString(),
+        label: "Scan " + (todaysCount + 1),
+        rawText: pendingRawText,
+        items: cleanItems,
+      };
+      saveImport(record).then(function () {
+        showSaveError(null);
+        announce("List saved. " + cleanItems.length + " items added.");
+        pendingItems = [];
+        pendingRawText = "";
+        showView("home");
+        renderHome();
+      });
+    });
+  });
+
+  /* ---------- View raw imported text ---------- */
+  document.getElementById("btn-view-raw").addEventListener("click", function () {
+    getAllImports().then(function (all) {
+      var todays = all.filter(function (i) { return i.dateKey === todayKey(); });
+      todays.sort(function (a, b) { return a.timestamp.localeCompare(b.timestamp); });
+      var container = document.getElementById("raw-import-list");
+      container.innerHTML = todays.map(function (imp) {
+        return (
+          "<h3>" + escapeHtml(imp.label) + " &mdash; " + timeLabel(imp.timestamp) + "</h3>" +
+          "<textarea readonly>" + escapeHtml(imp.rawText) + "</textarea>"
+        );
+      }).join("") || "<p>No imports yet today.</p>";
+      showView("raw");
+    });
+  });
+  document.getElementById("btn-raw-back").addEventListener("click", function () { showView("home"); renderHome(); });
+
+  /* ---------- History ---------- */
+  function renderHistoryList() {
+    return getAllImports().then(function (all) {
+      var byDate = {};
+      all.forEach(function (imp) {
+        if (!byDate[imp.dateKey]) byDate[imp.dateKey] = [];
+        byDate[imp.dateKey].push(imp);
+      });
+      var keys = Object.keys(byDate).sort().reverse();
+      var container = document.getElementById("history-list");
+      if (keys.length === 0) {
+        container.innerHTML = "<p>No past lists yet.</p>";
+        return;
+      }
+      container.innerHTML = keys.map(function (key) {
+        var imports = byDate[key];
+        var items = [];
+        imports.forEach(function (i) { items = items.concat(i.items); });
+        var done = items.filter(function (i) { return i.done; }).length;
+        return (
+          '<div class="history-entry">' +
+          "<div><strong>" + escapeHtml(dateKeyLabel(key)) + "</strong><br>" +
+          '<span class="muted">' + done + " of " + items.length + " complete &middot; " + imports.length + (imports.length === 1 ? " scan" : " scans") + "</span></div>" +
+          '<button type="button" class="btn-secondary" data-open-day="' + key + '">View</button>' +
+          "</div>"
+        );
+      }).join("");
+      container.querySelectorAll("[data-open-day]").forEach(function (btn) {
+        btn.addEventListener("click", function () { openHistoryDay(btn.getAttribute("data-open-day")); });
+      });
+    });
+  }
+
+  function openHistoryDay(dateKey) {
+    getAllImports().then(function (all) {
+      var imports = all.filter(function (i) { return i.dateKey === dateKey; });
+      imports.sort(function (a, b) { return a.timestamp.localeCompare(b.timestamp); });
+      var items = [];
+      imports.forEach(function (imp) { imp.items.forEach(function (it) { items.push(Object.assign({}, it, { importId: imp.id })); }); });
+      var done = items.filter(function (i) { return i.done; }).length;
+      document.getElementById("history-day-title").textContent = dateKeyLabel(dateKey);
+      document.getElementById("history-day-progress").textContent = done + " of " + items.length + " complete";
+      var list = document.getElementById("history-day-list");
+      list.innerHTML = items.map(function (it) { return itemRowHtml(it, { readonly: true }); }).join("");
+      list.querySelectorAll(".item-main-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var id = btn.getAttribute("data-toggle");
+          var details = list.querySelector('[data-details-for="' + id + '"]');
+          var expanded = btn.getAttribute("aria-expanded") === "true";
+          btn.setAttribute("aria-expanded", String(!expanded));
+          details.hidden = expanded;
+        });
+      });
+      list.querySelectorAll("[data-speak]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var found = null;
+          items.forEach(function (it) { if (it.id === btn.getAttribute("data-speak")) found = it; });
+          if (found) speak(speakTextForItem(found), btn);
+        });
+      });
+      showView("history-day");
+    });
+  }
+
+  /* ---------- Navigation ---------- */
+  document.getElementById("nav-home").addEventListener("click", function () { showView("home"); renderHome(); });
+  document.getElementById("nav-history").addEventListener("click", function () { showView("history"); renderHistoryList(); });
+  document.getElementById("nav-settings").addEventListener("click", function () { showView("settings"); refreshBackupNote(); refreshApiKeyStatus(); });
+  document.getElementById("btn-history-back").addEventListener("click", function () { showView("history"); renderHistoryList(); });
+
+  /* ---------- Settings: large text ---------- */
+  var largeTextBtn = document.getElementById("btn-toggle-large-text");
+  function applyLargeText(on) {
+    document.documentElement.classList.toggle("large-text", on);
+    largeTextBtn.setAttribute("aria-pressed", String(on));
+    largeTextBtn.textContent = on ? "On" : "Off";
+  }
+  getMeta("largeText").then(function (v) { applyLargeText(!!v); });
+  largeTextBtn.addEventListener("click", function () {
+    var on = largeTextBtn.getAttribute("aria-pressed") !== "true";
+    applyLargeText(on);
+    setMeta("largeText", on);
+  });
+
+  /* ---------- Settings: API key ---------- */
+  var apiKeyInput = document.getElementById("api-key-input");
+  function refreshApiKeyStatus() {
+    getMeta("anthropicApiKey").then(function (key) {
+      document.getElementById("api-key-status").textContent = key ? "A key is saved." : "No key saved yet — scanning won't work until one is added.";
+    });
+  }
+  getMeta("anthropicApiKey").then(function (key) { if (key) apiKeyInput.value = key; });
+  document.getElementById("btn-save-key").addEventListener("click", function () {
+    var val = apiKeyInput.value.trim();
+    setMeta("anthropicApiKey", val || null).then(function () {
+      announce(val ? "Key saved." : "Key removed.");
+      refreshApiKeyStatus();
+    });
+  });
+  document.getElementById("btn-show-key").addEventListener("click", function (e) {
+    var btn = e.currentTarget;
+    var showing = btn.getAttribute("aria-pressed") === "true";
+    btn.setAttribute("aria-pressed", String(!showing));
+    btn.textContent = showing ? "Show Key" : "Hide Key";
+    apiKeyInput.type = showing ? "password" : "text";
+  });
+
+  /* ---------- Settings: backup / restore ---------- */
+  function csvEscape(s) {
+    var str = String(s == null ? "" : s);
+    if (/[",\n]/.test(str)) return '"' + str.replace(/"/g, '""') + '"';
+    return str;
+  }
+  function refreshBackupNote() {
+    getMeta("lastBackup").then(function (v) {
+      document.getElementById("last-backup-note").textContent = v ? "Last backup: " + new Date(v).toLocaleString() : "No backup yet.";
+    });
+  }
+
+  document.getElementById("btn-backup").addEventListener("click", function () {
+    getAllImports().then(function (all) {
+      var header = ["importId", "dateKey", "timestamp", "label", "itemId", "itemName", "tags", "done", "detailsJson", "rawTextJson"];
+      var rows = [header.join(",")];
+      all.forEach(function (imp) {
+        imp.items.forEach(function (it) {
+          rows.push([
+            csvEscape(imp.id), csvEscape(imp.dateKey), csvEscape(imp.timestamp), csvEscape(imp.label),
+            csvEscape(it.id), csvEscape(it.name), csvEscape((it.tags || []).join("|")), csvEscape(it.done ? "1" : "0"),
+            csvEscape(JSON.stringify(it.details || [])), csvEscape(JSON.stringify(imp.rawText || "")),
+          ].join(","));
+        });
+      });
+      var csv = rows.join("\n");
+      var blob = new Blob([csv], { type: "text/csv" });
+      var now = new Date();
+      var stamp = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" + String(now.getDate()).padStart(2, "0") +
+        "_" + String(now.getHours()).padStart(2, "0") + String(now.getMinutes()).padStart(2, "0");
+      var filename = "TaskListBackup_" + stamp + ".csv";
+      var file = new File([blob], filename, { type: "text/csv" });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file], title: filename }).then(function () {
+          setMeta("lastBackup", new Date().toISOString());
+          refreshBackupNote();
+          announce("Backup shared.");
+        }).catch(function () { /* user cancelled */ });
+      } else {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        setMeta("lastBackup", new Date().toISOString());
+        refreshBackupNote();
+        announce("Backup downloaded as " + filename);
+      }
+    });
+  });
+
+  document.getElementById("btn-restore").addEventListener("click", function () { document.getElementById("file-restore").click(); });
+  document.getElementById("file-restore").addEventListener("change", function (e) {
+    var file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    var mode = document.getElementById("restore-mode").value;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var records = parseCsv(reader.result);
+        restoreRecords(records, mode);
+      } catch (err) {
+        announce("Could not read that backup file. Please check it and try again.");
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  function parseCsv(text) {
+    var lines = text.split(/\r?\n/).filter(function (l) { return l.length > 0; });
+    var rows = lines.map(parseCsvLine);
+    var header = rows[0];
+    return rows.slice(1).map(function (row) {
+      var obj = {};
+      header.forEach(function (h, i) { obj[h] = row[i]; });
+      return obj;
+    });
+  }
+  function parseCsvLine(line) {
+    var result = [];
+    var cur = "";
+    var inQuotes = false;
+    for (var i = 0; i < line.length; i++) {
+      var c = line[i];
+      if (inQuotes) {
+        if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+        else if (c === '"') { inQuotes = false; }
+        else { cur += c; }
+      } else {
+        if (c === '"') inQuotes = true;
+        else if (c === ",") { result.push(cur); cur = ""; }
+        else cur += c;
+      }
+    }
+    result.push(cur);
+    return result;
+  }
+
+  function restoreRecords(rows, mode) {
+    var byImport = {};
+    rows.forEach(function (r) {
+      if (!byImport[r.importId]) {
+        byImport[r.importId] = {
+          id: r.importId, dateKey: r.dateKey, timestamp: r.timestamp, label: r.label,
+          rawText: (function () { try { return JSON.parse(r.rawTextJson); } catch (e) { return ""; } })(),
+          items: [],
+        };
+      }
+      byImport[r.importId].items.push({
+        id: r.itemId, name: r.itemName,
+        tags: r.tags ? r.tags.split("|").filter(Boolean) : [],
+        done: r.done === "1",
+        details: (function () { try { return JSON.parse(r.detailsJson); } catch (e) { return []; } })(),
+      });
+    });
+    var incoming = Object.keys(byImport).map(function (k) { return byImport[k]; });
+    getAllImports().then(function (existing) {
+      var existingIds = existing.map(function (i) { return i.id; });
+      var existingByDate = {};
+      existing.forEach(function (i) { existingByDate[i.dateKey] = true; });
+      var toSave = [];
+      incoming.forEach(function (imp) {
+        if (mode === "replace" && existingByDate[imp.dateKey]) {
+          existing.filter(function (i) { return i.dateKey === imp.dateKey; }).forEach(function (i) { deleteImportRecord(i.id); });
+        }
+        if (mode === "merge" && existingIds.indexOf(imp.id) !== -1) return; // skip duplicate import id
+        toSave.push(imp);
+      });
+      Promise.all(toSave.map(saveImport)).then(function () {
+        announce("Restore complete. " + toSave.length + " scan(s) restored.");
+        renderHome();
+      });
+    });
+  }
+
+  /* ---------- Service worker ---------- */
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("sw.js").catch(function () {});
+    });
+  }
+
+  /* ---------- Test hook (manual QA only, harmless to leave in) ---------- */
+  window.__testInjectExtraction = function (items) {
+    pendingItems = items.map(function (it) {
+      return { id: uid(), name: it.name, tags: it.tags || [], details: it.details || [], done: false };
+    });
+    pendingRawText = pendingItems.map(function (it) {
+      var lines = [it.name];
+      (it.tags || []).forEach(function (t) { lines.push("  Tag: " + t); });
+      (it.details || []).forEach(function (d) { lines.push("  " + d.label + ": " + d.value); });
+      return lines.join("\n");
+    }).join("\n\n");
+    pendingDateKey = todayKey();
+    openReview();
+  };
+
+  /* ---------- Init ---------- */
+  showView("home");
+  renderHome();
+  refreshApiKeyStatus();
+})();
+</script>
+</body>
+</html>
