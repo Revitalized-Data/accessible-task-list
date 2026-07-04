@@ -748,18 +748,24 @@
       };
       img.onerror = function () {
         URL.revokeObjectURL(url);
-        reject(new Error("could not load the photo for resizing"));
+        var hint = /hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name || "")
+          ? " — this looks like a HEIC photo; try Settings > Camera > Formats > Most Compatible on the iPhone, or use the Take Photo button instead of choosing from Photos"
+          : "";
+        reject(new Error("could not open this photo to prepare it for upload" + hint));
       };
       img.src = url;
     });
   }
 
-  // Anthropic's API accepts images up to 5MB and handles its own server-side
-  // optimization; only recompress client-side when a photo genuinely exceeds
-  // that limit, and even then favor fidelity (fine print, small text) over
-  // aggressive shrinking.
+  // Anthropic's API only accepts jpeg/png/webp/gif — iPhones often hand back
+  // HEIC (from the Photos library, not the live camera), which the API
+  // silently rejects. Only skip re-encoding when the file is already a safe
+  // type AND under the 5MB limit; otherwise always re-encode through canvas
+  // (which normalizes to JPEG regardless of source format), favoring fidelity
+  // (fine print, small text) over aggressive shrinking.
+  var ANTHROPIC_SAFE_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
   function prepareImageForUpload(file) {
-    if (file.size <= ANTHROPIC_MAX_IMAGE_BYTES) {
+    if (ANTHROPIC_SAFE_IMAGE_TYPES.indexOf(file.type) !== -1 && file.size <= ANTHROPIC_MAX_IMAGE_BYTES) {
       return readFileAsDataUrl(file);
     }
     return resizeImageForUpload(file, 2600, 0.9);
@@ -795,15 +801,7 @@
             showScanError(emptyMsg);
             return;
           }
-          pendingItems = items;
-          pendingRawText = items.map(function (it) {
-            var lines = [it.name];
-            (it.tags || []).forEach(function (t) { lines.push("  Tag: " + t); });
-            (it.details || []).forEach(function (d) { lines.push("  " + d.label + ": " + d.value); });
-            return lines.join("\n");
-          }).join("\n\n");
-          pendingDateKey = todayKey();
-          openReview();
+          loadItemsIntoReview(items);
         }).catch(function (err) {
           clearInterval(cycleTimer);
           var msg = "Could not read the photo: " + err.message + ". Please try again.";
@@ -873,25 +871,67 @@
       if (data.stop_reason === "max_tokens") {
         throw new Error("The AI's response was cut off before finishing (too long). Try again, or scan one section at a time.");
       }
-      var parsed;
-      try {
-        var jsonText = extractJsonArray(text);
-        parsed = JSON.parse(jsonText);
-      } catch (e) {
-        var preview = text.slice(0, 200).replace(/\s+/g, " ");
-        throw new Error("The AI response could not be understood (" + e.message + "). It started with: \"" + preview + "\"");
-      }
-      if (!Array.isArray(parsed)) throw new Error("Unexpected response format (not a list). Raw start: \"" + text.slice(0, 150) + "\"");
-      return parsed.map(function (it) {
-        return {
-          id: uid(),
-          name: (it.name || "Unnamed").toString(),
-          tags: Array.isArray(it.tags) ? it.tags.map(String) : [],
-          details: Array.isArray(it.details) ? it.details.map(function (d) { return { label: String(d.label || ""), value: String(d.value || "") }; }) : [],
-          done: false,
-        };
-      });
+      return parseModelReplyToItems(text);
     });
+  }
+
+  // Shared by the in-app photo scan and the ?import= hand-off from the
+  // Shortcuts voice flow (both start from the model's raw reply text).
+  function parseModelReplyToItems(text) {
+    var parsed;
+    try {
+      var jsonText = extractJsonArray(text);
+      parsed = JSON.parse(jsonText);
+    } catch (e) {
+      var preview = text.slice(0, 200).replace(/\s+/g, " ");
+      throw new Error("The AI response could not be understood (" + e.message + "). It started with: \"" + preview + "\"");
+    }
+    if (!Array.isArray(parsed)) throw new Error("Unexpected response format (not a list). Raw start: \"" + text.slice(0, 150) + "\"");
+    return parsed.map(function (it) {
+      return {
+        id: uid(),
+        name: (it.name || "Unnamed").toString(),
+        tags: Array.isArray(it.tags) ? it.tags.map(String) : [],
+        details: Array.isArray(it.details) ? it.details.map(function (d) { return { label: String(d.label || ""), value: String(d.value || "") }; }) : [],
+        done: false,
+      };
+    });
+  }
+
+  function loadItemsIntoReview(items) {
+    pendingItems = items;
+    pendingRawText = items.map(function (it) {
+      var lines = [it.name];
+      (it.tags || []).forEach(function (t) { lines.push("  Tag: " + t); });
+      (it.details || []).forEach(function (d) { lines.push("  " + d.label + ": " + d.value); });
+      return lines.join("\n");
+    }).join("\n\n");
+    pendingDateKey = todayKey();
+    openReview();
+  }
+
+  // Hands-free hand-off from the "Goose Process" Shortcut: it runs the same
+  // photo->Claude vision call itself, then opens this app with the model's
+  // raw reply text in ?import= so she lands straight on the Review screen
+  // with no manual copy/paste or menu navigation.
+  function tryImportFromUrl() {
+    var raw = new URLSearchParams(window.location.search).get("import");
+    if (!raw) return;
+    history.replaceState(null, "", window.location.pathname);
+    try {
+      var items = parseModelReplyToItems(raw);
+      if (items.length === 0) {
+        var emptyMsg = "The imported scan had no rows. Try taking the photo again.";
+        announce(emptyMsg);
+        showScanError(emptyMsg);
+        return;
+      }
+      loadItemsIntoReview(items);
+    } catch (e) {
+      var msg = "Could not read the imported scan: " + e.message;
+      announce(msg);
+      showScanError(msg);
+    }
   }
 
   /* ---------- Review / Edit ---------- */
@@ -1280,6 +1320,7 @@
   showView("home");
   renderHome();
   refreshApiKeyStatus();
+  tryImportFromUrl();
 })();
 </script>
 </body>
