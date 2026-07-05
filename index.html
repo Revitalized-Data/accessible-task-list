@@ -258,6 +258,7 @@
   <h1>Daily Task List</h1>
   <nav aria-label="Main navigation">
     <button type="button" class="btn-header" id="nav-home">Home</button>
+    <button type="button" class="btn-header" id="nav-paste">Paste from Claude</button>
     <button type="button" class="btn-header" id="nav-history">History</button>
     <button type="button" class="btn-header" id="nav-settings">Settings</button>
   </nav>
@@ -297,6 +298,26 @@
       </div>
       <p class="progress-banner" id="home-progress"></p>
       <ul class="item-list" id="home-item-list"></ul>
+    </div>
+  </section>
+
+  <!-- PASTE FROM CLAUDE (free, no per-scan API cost) -->
+  <section id="view-paste" hidden>
+    <div class="card" id="paste-error-card" hidden style="border-color: var(--danger); background: var(--danger-bg);">
+      <strong id="paste-error-text"></strong>
+    </div>
+    <div class="card">
+      <h2>Add Today's List From Claude</h2>
+      <p class="muted">
+        Step 1: Open the Claude app, take a photo of the list there, and send it.<br>
+        Step 2: Copy Claude's whole reply.<br>
+        Step 3: Paste it below and tap Add to List.
+      </p>
+      <div class="field">
+        <label for="paste-input">Pasted reply from Claude</label>
+        <textarea id="paste-input" rows="6" placeholder="Paste Claude's reply here"></textarea>
+      </div>
+      <button type="button" class="btn-primary btn-big btn-block" id="btn-parse-paste">Add to List</button>
     </div>
   </section>
 
@@ -546,7 +567,7 @@
   }
 
   /* ---------- View management ---------- */
-  var views = ["home", "processing", "review", "raw", "history", "history-day", "settings"];
+  var views = ["home", "paste", "processing", "review", "raw", "history", "history-day", "settings"];
   function showView(name) {
     views.forEach(function (v) {
       document.getElementById("view-" + v).hidden = (v !== name);
@@ -934,6 +955,38 @@
     }
   }
 
+  /* ---------- Paste from Claude (free, no per-scan API cost) ---------- */
+  function showPasteError(msg) {
+    var card = document.getElementById("paste-error-card");
+    if (!msg) { card.hidden = true; return; }
+    document.getElementById("paste-error-text").textContent = msg;
+    card.hidden = false;
+  }
+  document.getElementById("btn-parse-paste").addEventListener("click", function () {
+    showPasteError(null);
+    var input = document.getElementById("paste-input");
+    var raw = input.value;
+    if (!raw || !raw.trim()) {
+      announce("Please paste Claude's reply first.");
+      return;
+    }
+    try {
+      var items = parseModelReplyToItems(raw);
+      if (items.length === 0) {
+        var emptyMsg = "No items were found in that text. Make sure you copied Claude's whole reply, including the list.";
+        announce(emptyMsg);
+        showPasteError(emptyMsg);
+        return;
+      }
+      input.value = "";
+      loadItemsIntoReview(items);
+    } catch (e) {
+      var msg = "Could not read that text: " + e.message + ". Make sure you copied Claude's whole reply.";
+      announce(msg);
+      showPasteError(msg);
+    }
+  });
+
   /* ---------- Review / Edit ---------- */
   function openReview() {
     document.getElementById("review-raw-text").value = pendingRawText;
@@ -1109,6 +1162,7 @@
 
   /* ---------- Navigation ---------- */
   document.getElementById("nav-home").addEventListener("click", function () { showView("home"); renderHome(); });
+  document.getElementById("nav-paste").addEventListener("click", function () { showView("paste"); });
   document.getElementById("nav-history").addEventListener("click", function () { showView("history"); renderHistoryList(); });
   document.getElementById("nav-settings").addEventListener("click", function () { showView("settings"); refreshBackupNote(); refreshApiKeyStatus(); });
   document.getElementById("btn-history-back").addEventListener("click", function () { showView("history"); renderHistoryList(); });
