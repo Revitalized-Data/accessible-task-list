@@ -332,6 +332,9 @@
 
   <!-- REVIEW / EDIT EXTRACTED ITEMS -->
   <section id="view-review" hidden>
+    <div class="card" id="review-warning-card" hidden style="border-color: var(--danger); background: var(--danger-bg);">
+      <strong id="review-warning-text"></strong>
+    </div>
     <div class="card">
       <h2>Review What Was Found</h2>
       <p class="muted">Check each item below. Fix any mistakes, then save. Use the microphone key on your keyboard to dictate text if that's easier.</p>
@@ -898,25 +901,65 @@
 
   // Shared by the in-app photo scan and the ?import= hand-off from the
   // Shortcuts voice flow (both start from the model's raw reply text).
+  // Some models (notably on-device/Shortcuts models, unlike Claude) truncate
+  // or drop a closing brace on the last item when generating long JSON. If a
+  // straight parse fails, retry after dropping only the last, broken item
+  // rather than guessing how to "fix" it — losing one row she can re-add is
+  // far safer than silently repairing data in a list that includes things
+  // like "Dog Aggressive" safety tags.
+  function parseJsonArrayWithRecovery(jsonText) {
+    try {
+      return { items: JSON.parse(jsonText), truncated: false };
+    } catch (e) {
+      var depth = 0, inString = false, stringChar = "", lastTopCommaIdx = -1;
+      for (var i = 0; i < jsonText.length; i++) {
+        var c = jsonText[i];
+        if (inString) {
+          if (c === "\\") { i++; continue; }
+          if (c === stringChar) inString = false;
+          continue;
+        }
+        if (c === '"' || c === "'") { inString = true; stringChar = c; continue; }
+        if (c === "[" || c === "{") depth++;
+        if (c === "]" || c === "}") depth--;
+        if (c === "," && depth === 1) lastTopCommaIdx = i;
+      }
+      if (lastTopCommaIdx === -1) throw e;
+      var items = JSON.parse(jsonText.slice(0, lastTopCommaIdx) + "]");
+      return { items: items, truncated: true };
+    }
+  }
+
   function parseModelReplyToItems(text) {
-    var parsed;
+    var result;
     try {
       var jsonText = extractJsonArray(text);
-      parsed = JSON.parse(jsonText);
+      result = parseJsonArrayWithRecovery(jsonText);
     } catch (e) {
       var preview = text.slice(0, 200).replace(/\s+/g, " ");
       throw new Error("The AI response could not be understood (" + e.message + "). It started with: \"" + preview + "\"");
     }
+    var parsed = result.items;
     if (!Array.isArray(parsed)) throw new Error("Unexpected response format (not a list). Raw start: \"" + text.slice(0, 150) + "\"");
-    return parsed.map(function (it) {
+    var items = parsed.map(function (it) {
       return {
         id: uid(),
         name: (it.name || "Unnamed").toString(),
         tags: Array.isArray(it.tags) ? it.tags.map(String) : [],
-        details: Array.isArray(it.details) ? it.details.map(function (d) { return { label: String(d.label || ""), value: String(d.value || "") }; }) : [],
+        // Accept either {label, value} objects (the requested shape) or
+        // plain strings (what some models return anyway) — either way, keep
+        // the actual content instead of silently dropping it.
+        details: Array.isArray(it.details) ? it.details.map(function (d) {
+          if (d && typeof d === "object" && !Array.isArray(d)) {
+            return { label: String(d.label || ""), value: String(d.value || "") };
+          }
+          return { label: "", value: String(d == null ? "" : d) };
+        }) : [],
         done: false,
       };
     });
+    items.truncated = result.truncated;
+    return items;
   }
 
   function loadItemsIntoReview(items) {
@@ -928,7 +971,7 @@
       return lines.join("\n");
     }).join("\n\n");
     pendingDateKey = todayKey();
-    openReview();
+    openReview(items.truncated ? "The last item looked cut off, so it was left out — check the end of the list and add it back with \"+ Add Item\" if needed." : null);
   }
 
   // Hands-free hand-off from the "Goose Process" Shortcut: it runs the same
@@ -988,11 +1031,20 @@
   });
 
   /* ---------- Review / Edit ---------- */
-  function openReview() {
+  function openReview(warning) {
     document.getElementById("review-raw-text").value = pendingRawText;
     renderReviewItems();
     showView("review");
-    announce(pendingItems.length + " lines found. Review and edit before saving.");
+    var msg = pendingItems.length + " lines found. Review and edit before saving.";
+    if (warning) msg += " " + warning;
+    announce(msg);
+    var card = document.getElementById("review-warning-card");
+    if (warning) {
+      document.getElementById("review-warning-text").textContent = warning;
+      card.hidden = false;
+    } else {
+      card.hidden = true;
+    }
   }
 
   function renderReviewItems() {
