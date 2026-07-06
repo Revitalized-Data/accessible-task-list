@@ -976,10 +976,17 @@
 
   // Hands-free hand-off from the "Goose Process" Shortcut: it runs the same
   // photo->Claude vision call itself, then opens this app with the model's
-  // raw reply text in ?import= so she lands straight on the Review screen
-  // with no manual copy/paste or menu navigation.
+  // raw reply text so she lands straight on the Review screen with no manual
+  // copy/paste or menu navigation. Uses the URL *fragment* (#import=...), not
+  // a query param (?import=...): a full day's list is large enough that
+  // GitHub Pages' server rejects it as a query string ("414 URI Too Long"),
+  // but a fragment is never sent to the server at all — it's handled
+  // entirely client-side, so there's no server-side length limit to hit.
   function tryImportFromUrl() {
-    var raw = new URLSearchParams(window.location.search).get("import");
+    var hash = window.location.hash;
+    var raw = hash && hash.indexOf("#import=") === 0
+      ? decodeURIComponent(hash.slice("#import=".length))
+      : new URLSearchParams(window.location.search).get("import");
     if (!raw) return;
     history.replaceState(null, "", window.location.pathname);
     try {

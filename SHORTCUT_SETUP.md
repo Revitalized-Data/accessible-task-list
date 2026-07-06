@@ -72,11 +72,20 @@ it by name).
    - Input: the text from step 6
 
 8. **Text** action to build the final link.
-   - `https://revitalized-data.github.io/accessible-task-list/?import=` +
+   - `https://revitalized-data.github.io/accessible-task-list/#import=` +
      (the URL-encoded text from step 7, inserted as a magic variable)
+   - Important: this is `#import=`, not `?import=`. A full day's list is
+     large enough that GitHub's server rejects it as a query string ("414
+     URI Too Long"). A `#` fragment is never sent over the network at all —
+     the app reads it entirely on-device — so there's no length limit.
+
+8b. **Get Text from Input** action.
+   - Input: the Text from step 8
+   - Fixes a "couldn't convert from Rich Text to URL" error that shows up
+     otherwise.
 
 9. **Open URLs** action.
-   - URLs: the Text from step 8
+   - URLs: the output of step 8b (not step 8 directly)
    - This opens the PWA (Safari, or the installed home-screen app if she's
      added it) directly on the Review screen, already populated, already
      read aloud.
