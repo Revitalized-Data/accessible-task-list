@@ -930,6 +930,18 @@
     }
   }
 
+  // If the prompt asks the model to self-report a row count (e.g. "ROW
+  // COUNT: photo has 15 rows, returning 15 objects."), catch a mismatch here
+  // so it reaches her as a real warning instead of being silently discarded
+  // as prose outside the JSON array.
+  function checkRowCountWarning(text) {
+    var m = text.match(/ROW COUNT:\s*photo has (\d+) rows?,?\s*returning (\d+) objects?/i);
+    if (!m) return null;
+    var expected = parseInt(m[1], 10), actual = parseInt(m[2], 10);
+    if (expected === actual) return null;
+    return "The AI counted " + expected + " row" + (expected === 1 ? "" : "s") + " in the photo but only returned " + actual + " item" + (actual === 1 ? "" : "s") + " — some animals might be missing. Check the list against the photo.";
+  }
+
   function parseModelReplyToItems(text) {
     var result;
     try {
@@ -959,6 +971,7 @@
       };
     });
     items.truncated = result.truncated;
+    items.rowCountWarning = checkRowCountWarning(text);
     return items;
   }
 
@@ -971,7 +984,10 @@
       return lines.join("\n");
     }).join("\n\n");
     pendingDateKey = todayKey();
-    openReview(items.truncated ? "The last item looked cut off, so it was left out — check the end of the list and add it back with \"+ Add Item\" if needed." : null);
+    var warnings = [];
+    if (items.rowCountWarning) warnings.push(items.rowCountWarning);
+    if (items.truncated) warnings.push("The last item looked cut off, so it was left out — check the end of the list and add it back with \"+ Add Item\" if needed.");
+    openReview(warnings.length ? warnings.join(" ") : null);
   }
 
   // Hands-free hand-off from the "Goose Process" Shortcut: it runs the same
