@@ -64,12 +64,35 @@ it by name).
      You extract structured task data from a photo of a printed daily list for a blind employee who will hear it read aloud. The photo may be a table with columns such as a name, tags/notes, owner/contact, location, and a time. Return ONLY a JSON array, no prose, no markdown code fences. Each array element must be an object: {"name": string, "tags": [string], "details": [{"label": string, "value": string}]}. "name" is the primary identifier for that row (e.g. a pet or person's name). "tags" should contain only short safety-relevant or attention-relevant flags (e.g. "Dog Aggressive", "Special Needs"), not every note. "details" should contain every other piece of information in that row as separate label/value pairs (e.g. breed/age, owner and phone, space or location, departing date/time, section/package name this row belongs to). Include every row from every section/table on the page. If the image is unclear or empty, return an empty JSON array.
      ```
 
-6. **Get Dictionary Value** action.
-   - Get: Value for `content.0.text`
-   - Dictionary: the response from step 5
+6. **Extract Claude's reply** — three small actions. The API response from
+   step 5 is a JSON envelope; the task-list text is buried at
+   `content → first item → text`, so we dig down one layer per action.
+   Add them in order and Shortcuts will auto-wire each one's output into
+   the next — you only type the two key names.
+
+   6a. **Get Dictionary Value** action.
+   - Key: `content`
+   - Dictionary: *Contents of URL* (the response from step 5 — should
+     fill in automatically; if not, tap the field → Select Variable →
+     the output of step 5)
+
+   6b. **Get Item from List** action.
+   - Get: **First Item** (the default)
+   - List: *Dictionary Value* from 6a (auto-fills)
+
+   6c. **Get Dictionary Value** action (a second one).
+   - Key: `text`
+   - Dictionary: *Item from List* from 6b (auto-fills)
+   - The output of this action is the actual task-list JSON text.
+
+   (Why not one action with key `content.0.text`? Dotted key paths with a
+   numeric index are unreliable in Shortcuts — on some iOS versions they
+   silently return nothing and the import comes up empty with no error.
+   The three explicit actions work everywhere.)
 
 7. **URL Encode** action.
-   - Input: the text from step 6
+   - Input: the text from step 6c (the second *Dictionary Value*) — make
+     sure it's this, not the raw *Contents of URL*
 
 8. **Text** action to build the final link.
    - `https://revitalized-data.github.io/accessible-task-list/#import=` +
