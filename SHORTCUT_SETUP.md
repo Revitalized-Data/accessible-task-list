@@ -1,114 +1,96 @@
 # "Goose Process" Siri Shortcut — hands-free photo scan
 
-Goal: she says "Hey Siri, take photo and run goose process" (or whatever phrase
-you name the Shortcut), takes the photo when prompted, and the app opens
-straight to the Review screen — no camera button, no copy/paste, no menus.
+**Status: this exact recipe was built and verified working end-to-end on 2026-07-10** —
+photo → Claude vision API → app opens on a populated Review screen. ~95% field
+accuracy on the reference sheet (16/16 pets, all names, split safety tags,
+package headers applied per animal); the Review screen catches the rest
+(occasional single-digit phone misreads from the API's internal image
+downscaling).
 
-This calls the same Claude vision API the app uses, so it keeps the same
-few-cents-per-scan cost and the same clean name/tags/details structuring —
-it just removes every manual step around the photo itself.
+Flow: say the Shortcut's name to Siri (or tap it), take/pick the photo, wait
+~30–60 seconds, and the task-list app opens with everything filled in.
 
-Build this in the **Shortcuts** app on her iPhone (Automation isn't needed —
-a plain Shortcut named with the phrase you want is enough for Siri to trigger
-it by name).
+Cost: a few cents per scan, billed to the Anthropic API key inside the
+Shortcut. Rejected/failed requests are never billed.
 
-## Steps
+## The action chain (in order)
 
-1. **New Shortcut.** Name it exactly the phrase she'll say, e.g.
-   `take photo and run goose process`. (Siri triggers shortcuts by their name,
-   said after "Hey Siri, …".)
+1. **Take Photo** (or Select Photos while testing).
 
-2. **Take Photo** action.
-   - Show Camera Preview: off (keeps it fully hands-free; turn on later if she
-     wants a chance to retake before it processes)
-   - Photo Count: 1
+2. **Convert Image** — Format: JPEG, Quality: High.
+   (Guarantees no HEIC ever reaches the API.)
 
-3. **Convert Image** action.
-   - Input: the photo from step 2
-   - Format: JPEG
-   - Quality: High
-   (Belt-and-suspenders with the app-side fix — guarantees Shortcuts never
-   hands Claude a HEIC file either.)
+3. **Resize Image** — input: Converted Image, width **2600**, height Auto.
+   (Keeps the upload small and under the API's 5MB image limit. Going bigger
+   doesn't help: the API downscales internally to ~1568px on the long edge.)
 
-4. **Base64 Encode** action (sometimes listed as "Encode Media").
-   - Input: the converted JPEG from step 3
-   - Encode: Base64
+4. **Base64 Encode** — input: **Resized Image** (NOT Converted Image — easy
+   mis-bind). Expand the action and set **Line Breaks: None** (the default
+   inserts a newline every 76 chars and corrupts the request body).
 
-5. **Get Contents of URL** action — this is the actual API call.
-   - URL: `https://api.anthropic.com/v1/messages`
+5. **Text** — the raw JSON request body. Paste this exactly, then delete the
+   `[[BASE64]]` placeholder and insert the Base64 Encoded variable in its
+   place (it must sit alone between the quotes — no leftover brackets):
+
+   ```
+   {"model":"claude-sonnet-5","max_tokens":16000,"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":"[[BASE64]]"}},{"type":"text","text":"Extract every row from every table in this photo of a printed pet-boarding list into a JSON array. Return ONLY the JSON array, no prose, no markdown fences. Each element: {\"name\": string, \"tags\": [string], \"details\": [{\"label\": string, \"value\": string}]}. name = the pet's name only, without the (F) or (M). tags = only short printed safety/attention flags like Dog Aggressive or Special Needs, split into separate entries, empty array if none. details = one separate label/value pair per fact, never combined: Gender (Female or Male from the (F)/(M) after the name), Breed, Weight, Age (always as X yrs Y mo, using 0 for whichever isn't shown), Owner(s), Phone, Space, Departing, Package Type (from that table's section header), Date of Service (from that same header), Notes (any other text printed in the Tags column that is not a safety flag, like File already made or Medications), Written Note (only if there is a handwritten note for that row). Include every row from every section. If a value is genuinely unreadable, use UNREADABLE rather than guessing. Return the JSON minified on a single line, with no indentation, spaces, or line breaks between elements."}]}]}
+   ```
+
+   Notes on this body:
+   - `claude-sonnet-5`, not Haiku: Haiku was tried and misread names/phones
+     badly and mangled section headers on this dense sheet.
+   - The "minified" instruction at the end is what keeps the response inside
+     Shortcuts' ~60s network timeout (pretty-printed output is ~3x the tokens
+     and caused `499 Client disconnected` timeouts). Don't remove it.
+
+6. **Get Contents of URL** — the API call.
+   - URL (typed as plain text in the top slot — NEVER a variable; putting the
+     Text variable here causes "couldn't convert Rich Text to URL" and hangs):
+     `https://api.anthropic.com/v1/messages`
    - Method: POST
-   - Headers:
-     - `content-type`: `application/json`
-     - `x-api-key`: *(her Anthropic API key — type this directly into the
-       Shortcut on her device; don't put it in any file or send it to me)*
-     - `anthropic-version`: `2023-06-01`
-   - Request Body: **JSON**, built as a dictionary:
-     ```
-     model:      claude-sonnet-5
-     max_tokens: 16000
-     system:     <paste the exact system prompt below>
-     messages:   [ one dictionary ]
-       role:    user
-       content: [ two items ]
-         1) type:   image
-            source:
-              type:       base64
-              media_type: image/jpeg
-              data:       <magic variable → Base64 Encoded output from step 4>
-         2) type: text
-            text: Extract every row from this list as JSON, following the schema exactly.
-     ```
-   - System prompt to paste in verbatim (same one the app uses, so parsing
-     matches exactly):
-     ```
-     You extract structured task data from a photo of a printed daily list for a blind employee who will hear it read aloud. The photo may be a table with columns such as a name, tags/notes, owner/contact, location, and a time. Return ONLY a JSON array, no prose, no markdown code fences. Each array element must be an object: {"name": string, "tags": [string], "details": [{"label": string, "value": string}]}. "name" is the primary identifier for that row (e.g. a pet or person's name). "tags" should contain only short safety-relevant or attention-relevant flags (e.g. "Dog Aggressive", "Special Needs"), not every note. "details" should contain every other piece of information in that row as separate label/value pairs (e.g. breed/age, owner and phone, space or location, departing date/time, section/package name this row belongs to). Include every row from every section/table on the page. If the image is unclear or empty, return an empty JSON array.
-     ```
+   - Headers (3):
+     - `x-api-key` → the API key (one unbroken line starting `sk-ant-`; use
+       the console's copy button — a wrapped/partial paste silently breaks auth)
+     - `anthropic-version` → `2023-06-01`
+     - `content-type` → `application/json`
+   - Request Body: **File** → File: the Text from step 5.
+   - First run pops an "Allow ... to connect to api.anthropic.com?" dialog —
+     it can open behind other windows and the action waits on it forever.
 
-6. **Get Dictionary Value** action.
-   - Get: Value for `content.0.text`
-   - Dictionary: the response from step 5
+7. **Get Dictionary Value** — key `content`, in: Contents of URL.
+8. **Get Item from List** — First Item, from: Dictionary Value.
+9. **Get Dictionary Value** — key `text`, in: Item from List.
 
-7. **URL Encode** action.
-   - Input: the text from step 6
+10. **URL Encode** — input: the Dictionary Value from step 9 (careful: two
+    steps share that output name — bind to the step-9 one).
 
-8. **Text** action to build the final link.
-   - `https://revitalized-data.github.io/accessible-task-list/#import=` +
-     (the URL-encoded text from step 7, inserted as a magic variable)
-   - Important: this is `#import=`, not `?import=`. A full day's list is
-     large enough that GitHub's server rejects it as a query string ("414
-     URI Too Long"). A `#` fragment is never sent over the network at all —
-     the app reads it entirely on-device — so there's no length limit.
+11. **Text** — the hand-off link, typed text plus the encoded variable:
+    `https://revitalized-data.github.io/accessible-task-list/#import=` + URL Encoded Text
+    - It must be `#import=`, NOT `?import=`: a full day's list exceeds
+      GitHub Pages' query-string limit (HTTP 414); a fragment never goes to
+      the server so it has no limit. The app handles the fragment even when
+      it's already open in a tab (hashchange listener, added 2026-07-10).
 
-8b. **Get Text from Input** action.
-   - Input: the Text from step 8
-   - Fixes a "couldn't convert from Rich Text to URL" error that shows up
-     otherwise.
+12. **Get Text from Input** — input: the Text from step 11.
+    (Fixes "couldn't convert Rich Text to URL" on the next step.)
 
-9. **Open URLs** action.
-   - URLs: the output of step 8b (not step 8 directly)
-   - This opens the PWA (Safari, or the installed home-screen app if she's
-     added it) directly on the Review screen, already populated, already
-     read aloud.
+13. **Open URLs** — input: the output of step 12 only (one chip, nothing else).
 
-## Optional but recommended
+## Debugging
 
-- Add an **If** action right after step 5, checking whether the response
-  dictionary has an `error` key. If it does, use **Speak Text** to say
-  "Scan failed, try again" and **Stop This Shortcut**, instead of opening a
-  broken URL. This mirrors the app's own error handling.
-- Add the Shortcut to her Home Screen or the "Today View" widget as a backup
-  trigger in case Siri mishears the phrase.
+- Insert a **Quick Look / Show** action after step 6 showing "Contents of
+  URL". API rejections aren't billed and don't stop the Shortcut — they flow
+  through silently as an empty payload — so this is the only place the real
+  error text (invalid key, image too large, bad base64) is visible.
+- `#import=` with nothing after it in the final URL = the extraction chain
+  got an error response; check the Quick Look output.
+- API-log `499 Client disconnected` = Shortcuts timed out waiting; the
+  response was too slow (see the minified note in step 5).
 
-## Why not fully free (on-device OCR only)?
+## If accuracy needs a boost later
 
-The `OCR POC.shortcut` already in this folder proves out Apple's free,
-on-device text extraction (Take Photo → Extract Text from Image). It costs
-nothing and needs no network — but it just reads text in roughly the order
-it appears on the page. For this dense, multi-column printed sheet (name,
-tags, owner phone, space, date across several sections), that comes out
-jumbled — there's no reliable way to know which phone number belongs to
-which pet without the structured understanding a vision model provides. If
-per-scan cost ever becomes the concern instead of reliability, the fallback
-that already works today is: photograph it in the Claude app itself (uses
-your subscription, not metered billing) and paste the reply into
-`index-paste-version.html`.
+The API downscales images to ~1568px on the long edge, which is what causes
+occasional single-digit phone/age misreads on this dense sheet. The upgrade
+path: crop the photo into top and bottom halves in Shortcuts and send both
+images in the same request's content array — each half then effectively
+doubles its resolution. Not currently wired in; ask Claude Code for the spec.
