@@ -194,13 +194,14 @@
 
   .field { margin-bottom: 1rem; }
   .field label { display: block; font-weight: 700; margin-bottom: 0.3rem; }
-  .field input[type="text"], .field textarea {
+  .field input[type="text"], .field textarea, .field select {
     width: 100%;
     font-size: 1rem;
     padding: 0.6rem;
     border: 2px solid var(--border);
     border-radius: 0.5rem;
     font-family: inherit;
+    background: #fff;
   }
   .field textarea { min-height: 5rem; }
 
@@ -258,6 +259,7 @@
   <h1>Daily Task List</h1>
   <nav aria-label="Main navigation">
     <button type="button" class="btn-header" id="nav-home">Home</button>
+    <button type="button" class="btn-header" id="nav-scan">Scan</button>
     <button type="button" class="btn-header" id="nav-paste">Paste from Claude</button>
     <button type="button" class="btn-header" id="nav-history">History</button>
     <button type="button" class="btn-header" id="nav-settings">Settings</button>
@@ -270,6 +272,32 @@
   <!-- HOME -->
   <section id="view-home">
     <div id="home-summary"></div>
+    <div class="card" id="home-warning-card" hidden style="border-color: var(--danger); background: var(--danger-bg);">
+      <strong id="home-warning-text"></strong>
+    </div>
+    <div class="card" id="home-empty-card" hidden>
+      <h2>No List Yet Today</h2>
+      <p class="muted">Run the Goose Process shortcut, or scan a photo from the Scan tab.</p>
+      <button type="button" class="btn-primary btn-block btn-big" id="btn-go-scan">
+        <span class="icon" aria-hidden="true">📷</span> Go to Scan
+      </button>
+    </div>
+    <div class="card" id="home-checklist-wrap" hidden>
+      <div class="row-gap" style="justify-content:space-between; align-items:center;">
+        <h2 style="margin:0;">Today's Checklist</h2>
+        <button type="button" class="btn-secondary" id="btn-view-raw">View Imported Text</button>
+      </div>
+      <div class="field">
+        <label for="home-sort">Sort list by</label>
+        <select id="home-sort"></select>
+      </div>
+      <p class="progress-banner" id="home-progress"></p>
+      <ul class="item-list" id="home-item-list"></ul>
+    </div>
+  </section>
+
+  <!-- SCAN -->
+  <section id="view-scan" hidden>
     <div class="card" id="scan-error-card" hidden style="border-color: var(--danger); background: var(--danger-bg);">
       <strong id="scan-error-text"></strong>
     </div>
@@ -290,14 +318,6 @@
       <input type="file" id="file-camera" accept="image/*" capture="environment" class="status-live">
       <input type="file" id="file-photos" accept="image/*" class="status-live">
       <input type="file" id="file-files" accept="image/*" class="status-live">
-    </div>
-    <div class="card" id="home-checklist-wrap" hidden>
-      <div class="row-gap" style="justify-content:space-between; align-items:center;">
-        <h2 style="margin:0;">Today's Checklist</h2>
-        <button type="button" class="btn-secondary" id="btn-view-raw">View Imported Text</button>
-      </div>
-      <p class="progress-banner" id="home-progress"></p>
-      <ul class="item-list" id="home-item-list"></ul>
     </div>
   </section>
 
@@ -570,7 +590,7 @@
   }
 
   /* ---------- View management ---------- */
-  var views = ["home", "paste", "processing", "review", "raw", "history", "history-day", "settings"];
+  var views = ["home", "scan", "paste", "processing", "review", "raw", "history", "history-day", "settings"];
   function showView(name) {
     views.forEach(function (v) {
       document.getElementById("view-" + v).hidden = (v !== name);
@@ -585,22 +605,109 @@
   var pendingDateKey = todayKey();
 
   /* ---------- Home rendering ---------- */
+
+  // Sort-value comparison that understands the data she actually has:
+  // dates like "Jun 29, 7:00am" (plain string compare puts July before June),
+  // numbers like "30 lbs", and falls back to natural-order text compare.
+  // Blank values always sort last so real data stays at the top.
+  var MONTH_INDEX = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+  function parseDateish(v) {
+    var m = String(v).match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:,?\s*(\d{4}))?/i);
+    if (!m) return null;
+    var t = String(v).match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i);
+    var hours = 0, minutes = 0;
+    if (t) {
+      hours = (+t[1]) % 12;
+      if (t[3] && t[3].toLowerCase() === "pm") hours += 12;
+      minutes = +t[2];
+    }
+    var year = m[3] ? +m[3] : new Date().getFullYear();
+    return new Date(year, MONTH_INDEX[m[1].slice(0, 3).toLowerCase()], +m[2], hours, minutes).getTime();
+  }
+  function smartCompareValues(a, b) {
+    var emptyA = !a || !String(a).trim(), emptyB = !b || !String(b).trim();
+    if (emptyA && emptyB) return 0;
+    if (emptyA) return 1;
+    if (emptyB) return -1;
+    var dateA = parseDateish(a), dateB = parseDateish(b);
+    if (dateA !== null && dateB !== null && dateA !== dateB) return dateA - dateB;
+    var numA = parseFloat(a), numB = parseFloat(b);
+    if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numA - numB;
+    return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
+  }
+  function detailValue(it, label) {
+    var lower = label.toLowerCase();
+    for (var i = 0; i < (it.details || []).length; i++) {
+      if (String(it.details[i].label || "").toLowerCase() === lower) return it.details[i].value;
+    }
+    return "";
+  }
+  function sortItems(items, sortKey) {
+    if (!sortKey || sortKey === "scan") return items;
+    var sorted = items.slice();
+    if (sortKey === "name") {
+      sorted.sort(function (a, b) { return String(a.name).localeCompare(String(b.name), undefined, { sensitivity: "base" }); });
+    } else if (sortKey === "status") {
+      sorted.sort(function (a, b) { return (a.done ? 1 : 0) - (b.done ? 1 : 0); });
+    } else if (sortKey.indexOf("label:") === 0) {
+      var label = sortKey.slice("label:".length);
+      sorted.sort(function (a, b) { return smartCompareValues(detailValue(a, label), detailValue(b, label)); });
+    }
+    return sorted;
+  }
+  function rebuildSortOptions(items, currentKey) {
+    var select = document.getElementById("home-sort");
+    var seen = {};
+    var labels = [];
+    items.forEach(function (it) {
+      (it.details || []).forEach(function (d) {
+        var label = String(d.label || "").trim();
+        if (!label) return;
+        var lower = label.toLowerCase();
+        if (!seen[lower]) { seen[lower] = true; labels.push(label); }
+      });
+    });
+    var options = [
+      { value: "scan", text: "Order scanned" },
+      { value: "name", text: "Name" },
+      { value: "status", text: "Not done first" },
+    ].concat(labels.map(function (l) { return { value: "label:" + l, text: l }; }));
+    select.innerHTML = options.map(function (o) {
+      return '<option value="' + escapeHtml(o.value) + '">' + escapeHtml(o.text) + "</option>";
+    }).join("");
+    select.value = options.some(function (o) { return o.value === currentKey; }) ? currentKey : "scan";
+  }
+
+  function showHomeWarning(msg) {
+    var card = document.getElementById("home-warning-card");
+    if (!msg) { card.hidden = true; return; }
+    document.getElementById("home-warning-text").textContent = msg;
+    card.hidden = false;
+  }
+
   function renderHome() {
-    return getAllImports().then(function (all) {
+    return Promise.all([getAllImports(), getMeta("homeSortKey")]).then(function (results) {
+      var all = results[0];
+      var sortKey = results[1] || "scan";
       var todays = all.filter(function (i) { return i.dateKey === todayKey(); });
       var wrap = document.getElementById("home-checklist-wrap");
       var summary = document.getElementById("home-summary");
+      var emptyCard = document.getElementById("home-empty-card");
       if (todays.length === 0) {
         wrap.hidden = true;
+        emptyCard.hidden = false;
         summary.innerHTML = "";
         return;
       }
+      emptyCard.hidden = true;
       wrap.hidden = false;
       todays.sort(function (a, b) { return a.timestamp.localeCompare(b.timestamp); });
       var items = [];
       todays.forEach(function (imp) {
         imp.items.forEach(function (it) { items.push(Object.assign({}, it, { importId: imp.id })); });
       });
+      rebuildSortOptions(items, sortKey);
+      items = sortItems(items, sortKey);
       var doneCount = items.filter(function (i) { return i.done; }).length;
       document.getElementById("home-progress").textContent = doneCount + " of " + items.length + " complete";
       var list = document.getElementById("home-item-list");
@@ -608,6 +715,16 @@
       attachItemRowHandlers(list, todays, refreshAfterToggle);
     });
   }
+
+  document.getElementById("home-sort").addEventListener("change", function () {
+    var select = document.getElementById("home-sort");
+    var chosenText = select.options[select.selectedIndex] ? select.options[select.selectedIndex].text : "";
+    setMeta("homeSortKey", select.value).then(function () {
+      renderHome().then(function () {
+        announce("Sorted by " + chosenText + ".");
+      });
+    });
+  });
 
   function refreshAfterToggle() { renderHome(); }
 
@@ -820,8 +937,7 @@
           if (items.length === 0) {
             var emptyMsg = "The AI could not find any rows on that photo. Try retaking it closer, flatter, and with less glare, then scan again.";
             announce(emptyMsg);
-            showView("home");
-            renderHome();
+            showView("scan");
             showScanError(emptyMsg);
             return;
           }
@@ -830,16 +946,14 @@
           clearInterval(cycleTimer);
           var msg = "Could not read the photo: " + err.message + ". Please try again.";
           announce(msg);
-          showView("home");
-          renderHome();
+          showView("scan");
           showScanError(msg);
         });
       }).catch(function (err) {
         clearInterval(cycleTimer);
         var msg = "Could not prepare the photo: " + err.message + ". Please try again.";
         announce(msg);
-        showView("home");
-        renderHome();
+        showView("scan");
         showScanError(msg);
       });
     });
@@ -975,29 +1089,99 @@
     return items;
   }
 
-  function loadItemsIntoReview(items) {
-    pendingItems = items;
-    pendingRawText = items.map(function (it) {
+  function buildRawText(items) {
+    return items.map(function (it) {
       var lines = [it.name];
       (it.tags || []).forEach(function (t) { lines.push("  Tag: " + t); });
       (it.details || []).forEach(function (d) { lines.push("  " + d.label + ": " + d.value); });
       return lines.join("\n");
     }).join("\n\n");
-    pendingDateKey = todayKey();
+  }
+
+  function collectImportWarnings(items) {
     var warnings = [];
     if (items.rowCountWarning) warnings.push(items.rowCountWarning);
     if (items.truncated) warnings.push("The last item looked cut off, so it was left out — check the end of the list and add it back with \"+ Add Item\" if needed.");
+    return warnings;
+  }
+
+  function loadItemsIntoReview(items) {
+    pendingItems = items;
+    pendingRawText = buildRawText(items);
+    pendingDateKey = todayKey();
+    var warnings = collectImportWarnings(items);
     openReview(warnings.length ? warnings.join(" ") : null);
+  }
+
+  // Saves a Shortcut-imported scan straight into today's list — no Review
+  // stop, no Save tap — because the primary user can't visually review
+  // anyway; she just wants the list loaded. Rescanning the same page
+  // replaces those animals (by name) instead of duplicating them, keeping
+  // each one's checked-off state; scanning a second page appends. Any
+  // parse warnings surface on Home instead of the Review screen.
+  function autoLoadImportedItems(items) {
+    var cleanItems = items.filter(function (it) { return it.name && it.name.trim().length > 0; });
+    var warnings = collectImportWarnings(items);
+    return getAllImports().then(function (all) {
+      var todays = all.filter(function (i) { return i.dateKey === todayKey(); });
+      var doneByName = {};
+      todays.forEach(function (imp) {
+        imp.items.forEach(function (it) {
+          doneByName[String(it.name).trim().toLowerCase()] = it.done;
+        });
+      });
+      var newNames = {};
+      var replacedCount = 0;
+      cleanItems.forEach(function (it) {
+        var key = String(it.name).trim().toLowerCase();
+        newNames[key] = true;
+        if (key in doneByName) {
+          it.done = doneByName[key];
+          replacedCount++;
+        }
+      });
+      // Remove superseded copies of rescanned animals from earlier scans.
+      var updates = [];
+      todays.forEach(function (imp) {
+        var kept = imp.items.filter(function (it) { return !newNames[String(it.name).trim().toLowerCase()]; });
+        if (kept.length === imp.items.length) return;
+        if (kept.length === 0) {
+          updates.push(deleteImportRecord(imp.id));
+        } else {
+          imp.items = kept;
+          updates.push(saveImport(imp));
+        }
+      });
+      var record = {
+        id: uid(),
+        dateKey: todayKey(),
+        timestamp: new Date().toISOString(),
+        label: "Scan " + (todays.length + 1),
+        rawText: buildRawText(cleanItems),
+        items: cleanItems,
+      };
+      updates.push(saveImport(record));
+      return Promise.all(updates).then(function () {
+        showView("home");
+        return renderHome().then(function () {
+          var msg = "List loaded. " + cleanItems.length + " animal" + (cleanItems.length === 1 ? "" : "s") + ".";
+          if (replacedCount > 0) msg += " " + replacedCount + " updated from an earlier scan.";
+          if (warnings.length) msg += " " + warnings.join(" ");
+          announce(msg);
+          showHomeWarning(warnings.length ? warnings.join(" ") : null);
+        });
+      });
+    });
   }
 
   // Hands-free hand-off from the "Goose Process" Shortcut: it runs the same
   // photo->Claude vision call itself, then opens this app with the model's
-  // raw reply text so she lands straight on the Review screen with no manual
-  // copy/paste or menu navigation. Uses the URL *fragment* (#import=...), not
-  // a query param (?import=...): a full day's list is large enough that
-  // GitHub Pages' server rejects it as a query string ("414 URI Too Long"),
-  // but a fragment is never sent to the server at all — it's handled
-  // entirely client-side, so there's no server-side length limit to hit.
+  // raw reply text, which is saved straight into today's checklist with no
+  // manual steps. Uses the URL *fragment* (#import=...), not a query param
+  // (?import=...): a full day's list is large enough that GitHub Pages'
+  // server rejects it as a query string ("414 URI Too Long"), but a
+  // fragment is never sent to the server at all — it's handled entirely
+  // client-side, so there's no server-side length limit to hit.
   function tryImportFromUrl() {
     var hash = window.location.hash;
     var raw = hash && hash.indexOf("#import=") === 0
@@ -1010,13 +1194,15 @@
       if (items.length === 0) {
         var emptyMsg = "The imported scan had no rows. Try taking the photo again.";
         announce(emptyMsg);
+        showView("scan");
         showScanError(emptyMsg);
         return;
       }
-      loadItemsIntoReview(items);
+      autoLoadImportedItems(items);
     } catch (e) {
       var msg = "Could not read the imported scan: " + e.message;
       announce(msg);
+      showView("scan");
       showScanError(msg);
     }
   }
@@ -1237,6 +1423,8 @@
 
   /* ---------- Navigation ---------- */
   document.getElementById("nav-home").addEventListener("click", function () { showView("home"); renderHome(); });
+  document.getElementById("nav-scan").addEventListener("click", function () { showView("scan"); });
+  document.getElementById("btn-go-scan").addEventListener("click", function () { showView("scan"); });
   document.getElementById("nav-paste").addEventListener("click", function () { showView("paste"); });
   document.getElementById("nav-history").addEventListener("click", function () { showView("history"); renderHistoryList(); });
   document.getElementById("nav-settings").addEventListener("click", function () { showView("settings"); refreshBackupNote(); refreshApiKeyStatus(); });
