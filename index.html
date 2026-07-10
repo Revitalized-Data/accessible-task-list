@@ -1450,6 +1450,11 @@
   renderHome();
   refreshApiKeyStatus();
   tryImportFromUrl();
+  // Opening a #import= link when this page is ALREADY open in a tab only
+  // changes the fragment — the browser doesn't reload the page, so the
+  // init-time check above never re-runs. Listen for that case explicitly,
+  // or the Shortcut hand-off silently does nothing on an already-open app.
+  window.addEventListener("hashchange", tryImportFromUrl);
 })();
 </script>
 </body>
